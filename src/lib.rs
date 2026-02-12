@@ -63,7 +63,7 @@ use aes::cipher::generic_array::{typenum::U16, typenum::U8, GenericArray};
 use aes::cipher::{BlockEncrypt, KeyInit};
 use aes::Aes128;
 use byteorder::{ByteOrder, LittleEndian};
-use rand::{CryptoRng, RngCore, SeedableRng};
+use rand::{Rng, SeedableRng, TryCryptoRng, TryRng};
 use std::mem;
 use std::slice;
 
@@ -221,9 +221,11 @@ impl AesRng {
     }
 }
 
-impl RngCore for AesRng {
+impl TryRng for AesRng {
+    type Error = core::convert::Infallible;
+
     /// fetches 32 bits of randomness
-    fn next_u32(&mut self) -> u32 {
+    fn try_next_u32(&mut self) -> Result<u32, Self::Error> {
         let u32_size = mem::size_of::<u32>();
         if self.state.used_bytes >= STATE_SIZE - u32_size {
             self.next();
@@ -231,22 +233,22 @@ impl RngCore for AesRng {
         let used_bytes = self.state.used_bytes;
         self.state.used_bytes += u32_size; // update number of used bytes
         let blocks_bytes = self.state.as_mut_bytes();
-        LittleEndian::read_u32(&blocks_bytes[used_bytes..used_bytes + u32_size])
+        Ok(LittleEndian::read_u32(&blocks_bytes[used_bytes..used_bytes + u32_size]))
     }
 
     /// fetches 64 bits of randomness
-    fn next_u64(&mut self) -> u64 {
+    fn try_next_u64(&mut self) -> Result<u64, Self::Error> {
         let u64_size = mem::size_of::<u64>();
         if self.state.used_bytes >= STATE_SIZE - u64_size {
             self.next();
         }
         let used_bytes = self.state.used_bytes;
         self.state.used_bytes += u64_size; // update number of used bytes
-        LittleEndian::read_u64(&self.state.as_mut_bytes()[used_bytes..used_bytes + u64_size])
+        Ok(LittleEndian::read_u64(&self.state.as_mut_bytes()[used_bytes..used_bytes + u64_size]))
     }
 
     /// Fills in an array of bytes with randomness
-    fn fill_bytes(&mut self, dest: &mut [u8]) {
+    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), Self::Error> {
         let mut read_len = STATE_SIZE - self.state.used_bytes;
         let mut dest_start = 0;
 
@@ -266,10 +268,12 @@ impl RngCore for AesRng {
         dest[dest_start..dest_len]
             .copy_from_slice(&self.state.as_mut_bytes()[src_start..src_start + remainder]);
         self.state.used_bytes += remainder;
+        
+        Ok(())
     }
 }
 
-impl CryptoRng for AesRng {}
+impl TryCryptoRng for AesRng {}
 
 #[cfg(test)]
 mod tests {
